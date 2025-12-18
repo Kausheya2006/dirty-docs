@@ -1,0 +1,9 @@
+ss_*
+persistent/
+
+mds
+!project_logs.md
+!README.md
+scripts
+
+logs/
