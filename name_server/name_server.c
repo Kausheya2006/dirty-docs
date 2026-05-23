@@ -1735,7 +1735,11 @@ void handle_client_commands(char *username, int sock)
                     int is_folder;
                 } FileInfo;
                 
-                FileInfo file_list[256];
+                FileInfo *file_list = calloc(256, sizeof(FileInfo));
+                if (!file_list) {
+                    write(sock, "ERR_MEMORY\n", 11);
+                    continue;
+                }
                 int file_count = 0;
                 
                 // Step 1: Collect file info while holding lock (NO network calls)
@@ -1748,7 +1752,12 @@ void handle_client_commands(char *username, int sock)
                     char prefix[MAX_FILENAME * 2];
                 } StackEntry;
                 
-                StackEntry stack[1000];
+                StackEntry *stack = calloc(1000, sizeof(StackEntry));
+                if (!stack) {
+                    free(file_list);
+                    write(sock, "ERR_MEMORY\n", 11);
+                    continue;
+                }
                 int stack_top = 0;
                 
                 if (file_trie_root) {
@@ -1809,8 +1818,13 @@ void handle_client_commands(char *username, int sock)
                 // Lock released! Now safe to make network calls
                 
                 // Step 2: Fetch stats from storage servers (without holding lock)
-                char output[BUFFER_SIZE * 8];
-                output[0] = '\0';
+                char *output = calloc(1, BUFFER_SIZE * 8);
+                if (!output) {
+                    free(stack);
+                    free(file_list);
+                    write(sock, "ERR_MEMORY\n", 11);
+                    continue;
+                }
                 
                 // Add header
                 strcat(output, "PERMS      OWNER        SIZE    WORDS    CHARS    LAST ACCESS        FILENAME\n");
@@ -1860,6 +1874,9 @@ void handle_client_commands(char *username, int sock)
                 }
                 
                 write(sock, output, strlen(output));
+                free(output);
+                free(stack);
+                free(file_list);
             }
         }
 

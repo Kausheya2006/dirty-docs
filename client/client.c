@@ -27,6 +27,94 @@
 #define T_UP         "┴"
 #define CROSS        "┼"
 
+static char prefill_buffer[2048];
+static int prefill_pending = 0;
+static volatile int libedit_done = 0;
+static char *libedit_line = NULL;
+
+static int prefill_hook(const char *unused1, int unused2);
+
+static int is_libedit_readline(void) {
+    return rl_library_version && strstr(rl_library_version, "EditLine") != NULL;
+}
+
+static void prefill_input_queue(void) {
+    const unsigned char *p = (const unsigned char *)prefill_buffer;
+    while (*p) {
+        rl_stuff_char((int)(*p));
+        p++;
+    }
+}
+
+static void libedit_line_handler(char *line) {
+    if (libedit_line) {
+        free(libedit_line);
+        libedit_line = NULL;
+    }
+    libedit_line = strdup(line ? line : "");
+    libedit_done = 1;
+}
+
+static char *readline_with_prefill(const char *prompt) {
+    if (is_libedit_readline()) {
+        if (prefill_buffer[0] == '\0') {
+            return readline(prompt);
+        }
+
+        libedit_done = 0;
+        if (libedit_line) {
+            free(libedit_line);
+            libedit_line = NULL;
+        }
+
+        rl_callback_handler_install(prompt, libedit_line_handler);
+        rl_insert_text(prefill_buffer);
+        rl_point = rl_end;
+        rl_redisplay();
+
+        while (!libedit_done) {
+            rl_callback_read_char();
+        }
+
+        rl_callback_handler_remove();
+        return libedit_line ? libedit_line : strdup("");
+    }
+
+    prefill_pending = 1;
+    rl_startup_hook = prefill_hook;
+    rl_pre_input_hook = prefill_hook;
+    char *line = readline(prompt);
+    rl_startup_hook = NULL;
+    rl_pre_input_hook = NULL;
+    return line;
+}
+
+static int prefill_hook(const char *unused1, int unused2) {
+    (void)unused1;
+    (void)unused2;
+    if (!prefill_pending) {
+        return 0;
+    }
+    prefill_pending = 0;
+    rl_insert_text(prefill_buffer);
+    rl_point = rl_end;
+    rl_redisplay();
+    return 0;
+}
+
+static int read_line(int fd, char *buf, size_t max_len) {
+    size_t pos = 0;
+    while (pos + 1 < max_len) {
+        char c;
+        ssize_t n = read(fd, &c, 1);
+        if (n <= 0) break;
+        if (c == '\n') break;
+        buf[pos++] = c;
+    }
+    buf[pos] = '\0';
+    return (int)pos;
+}
+
 // --- Helper Functions for Pretty Output ---
 void print_separator(int width) {
     for (int i = 0; i < width; i++) printf("%s", HORIZONTAL);
@@ -1223,38 +1311,44 @@ void handle_ss_connection(const char* ss_ip, int ss_port, const char* full_comma
     
     // --- WRITE Logic ---
     else if (strncmp(full_command, "WRITE", 5) == 0) {
-        // Wait for the lock ACK
-        bzero(buffer, BUFFER_SIZE);
-        if (read(ss_sock, buffer, BUFFER_SIZE) < 0) {
+        char ack_line[BUFFER_SIZE];
+        if (read_line(ss_sock, ack_line, sizeof(ack_line)) <= 0) {
             die("ERROR reading from SS");
         }
         
-        if (strncmp(buffer, "ACK_WRITE_LOCKED", 16) != 0) {
-            printf("%s[ERROR]%s %s\n", RED, RESET, buffer);
+        if (strcmp(ack_line, "ACK_WRITE_LOCKED") != 0) {
+            printf("%s[ERROR]%s %s\n", RED, RESET, ack_line);
             close(ss_sock);
             return;
         }
         
-        printf("%s[WRITE MODE]%s Sentence locked. Enter updates (<word_index> <content>).\n", GREEN, RESET);
-        printf("%s[WRITE MODE]%s Type 'ETIRW' to finish and save.\n", GREEN, RESET);
-        
-        // Enter dedicated WRITE loop
-        while (1) {
-            printf("%sWRITE >%s ", YELLOW, RESET);
-            bzero(buffer, BUFFER_SIZE);
-            fgets(buffer, BUFFER_SIZE, stdin);
-            
-            // Send to SS
-            if (write(ss_sock, buffer, strlen(buffer)) < 0) {
-                die("ERROR writing to SS during write");
-            }
-            
-            if (strncmp(buffer, "ETIRW", 5) == 0) {
-                break; // Exit loop
-            }
+        char sentence_line[2048];
+        if (read_line(ss_sock, sentence_line, sizeof(sentence_line)) < 0) {
+            sentence_line[0] = '\0';
         }
         
-        // Wait for final ACK from SS
+        strncpy(prefill_buffer, sentence_line, sizeof(prefill_buffer) - 1);
+        prefill_buffer[sizeof(prefill_buffer) - 1] = '\0';
+        
+        char *line = readline_with_prefill("WRITE > ");
+        
+        if (line == NULL) {
+            line = strdup("");
+        }
+
+        if (line[0] == '\0' && prefill_buffer[0] != '\0') {
+            free(line);
+            line = strdup(prefill_buffer);
+        }
+        
+        char outbuf[2050];
+        snprintf(outbuf, sizeof(outbuf), "%s\n", line);
+        if (write(ss_sock, outbuf, strlen(outbuf)) < 0) {
+            free(line);
+            die("ERROR writing to SS during write");
+        }
+        free(line);
+        
         bzero(buffer, BUFFER_SIZE);
         read(ss_sock, buffer, BUFFER_SIZE);
         
@@ -1343,7 +1437,7 @@ int main(int argc, char *argv[]) {
     print_welcome_banner();
     
     // Get username ---
-    printf("Give us your username ▄︻デ══━一 ");
+    printf("Give us your username : ");
     fgets(username, 100, stdin);
     username[strcspn(username, "\n")] = 0; // Remove trailing newline
     

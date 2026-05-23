@@ -1,9 +1,8 @@
-ss_*
+ss_*_data/
 persistent/
-
-mds
-!project_logs.md
-!README.md
-scripts
-
 logs/
+
+ns
+ss
+user
+*.o
