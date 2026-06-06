@@ -2,10 +2,25 @@
 
 A highly concurrent, distributed collaborative file system written in C. 
 
-<image src='assets/image.png' width=650>
-
+<p align="center">
+  <img src="https://img.shields.io/badge/Language-C-A8B9CC?style=for-the-badge&logo=c&logoColor=white" alt="C Language" />
+  <img src="https://img.shields.io/badge/Networking-libpcap-4A90E2?style=for-the-badge&logo=wireshark&logoColor=white" alt="libpcap" />
+  <img src="https://img.shields.io/badge/Interface-GNU%20Readline-FFD700?style=for-the-badge&logo=gnubash&logoColor=black" alt="GNU Readline" />
+  <img src="https://img.shields.io/badge/Build-GNU%20Make-1F8A70?style=for-the-badge&logo=gnu&logoColor=white" alt="GNU Make" />
+</p>
 
 DirtyDocs++ implements a decentralized architecture separating metadata orchestration (Name Server) from high-throughput data operations (Storage Servers). It supports real-time concurrent editing via sentence-level locking, fault tolerance through asynchronous replication, and an interactive, terminal-based client environment.
+
+---
+
+##  Application Interface & Design
+
+### Architecture Blueprint
+<p align="center">
+  <img src="assets/image.png" width="650" alt="DirtyDocs++ System Architecture" style="border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);" />
+</p>
+
+---
 
 ## Core Architecture
 
